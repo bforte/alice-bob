@@ -2,7 +2,7 @@ name:                alice-bob
 version:             0.1.0.0
 synopsis:            Minimalist esolang based on Brain-Flak
 description:         Replaces the left stack and right stack by Alice's stack that behaves as usual and Bob's queue which interprets booleans differently
-homepage:            https://github.com/bforte/alice-bob#readme
+homepage:            https://github.com/bforte/alice-bob#README.md
 license:             BSD3
 license-file:        LICENSE
 author:              BMO

@@ -123,9 +123,9 @@ output env
 
 ascii = putStr . map (chr . (`mod` 128) . fromIntegral)
 
-data Flags = F Bool Bool ([Integer] -> IO ())
+data Flags = F Bool ([Integer] -> IO ())
 
-defaults = F False False (putStrLn . unwords . map show)
+defaults = F False (putStrLn . unwords . map show)
 
 main :: IO ()
 main = getOpt Permute options <$> getArgs >>= \case
