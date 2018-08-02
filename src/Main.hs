@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleInstances, GeneralizedNewtypeDeriving, LambdaCase, TemplateHaskell #-}
+{-# LANGUAGE FlexibleContexts, FlexibleInstances, GeneralizedNewtypeDeriving, LambdaCase, TemplateHaskell #-}
 
 module Main where
 
@@ -18,8 +18,8 @@ type Prog = [Stmt]
 data Stmt = One       | Len         | Pop        | Swp          -- Nilads
           | Push Prog | Negate Prog | While Prog | Ignore Prog  -- Monads
 
-parseProg = parse (progP <* eof) "src" . dropWhileEnd (`notElem` brackets)
-  where
+parseProg = parse (progP <* eof) "src" . dropWhileEnd (`notElem` brackets) where
+
     progP = many $ choice [paren cs n m | (cs,n,m) <- funcs]
 
     funcs = [ ("()",One,Push)
@@ -38,7 +38,6 @@ parseProg = parse (progP <* eof) "src" . dropWhileEnd (`notElem` brackets)
     dropCs = void . many $ noneOf brackets
 
     brackets = "()[]{}<>"
-
 
 parseInput = parse (read <$> many1 digit <* eof) "input"
 
@@ -79,69 +78,68 @@ data Env = E
 
 makeLenses ''Env
 
-newtype AB a = AB { runAB :: State Env a }
-  deriving (Functor, Applicative, Monad, MonadState Env)
 
-eval :: Stmt -> AB Integer
-eval One = pure 1
-eval Len = use active >>= \case
-  Q -> size <$> use bob
-  S -> size <$> use alice
-eval Pop = use active >>= \case
-  Q -> do
-    q <- use bob
-    let (a,q') = pop q
-    bob .= q'
-    pure a
-  S -> do
-    s <- use alice
-    let (a,s') = pop s
-    alice .= s'
-    pure a
-eval Swp = 0 <$ (active %= next)
-eval (Push stmts) = do
-  v <- sum <$> mapM eval stmts
-  use active >>= \case
-    Q -> bob %= push v
-    S -> alice %= push v
-  pure v
-eval (Negate stmts) = negate . sum <$> mapM eval stmts
-eval w@(While stmts) = use active >>= \case
-  Q -> peek <$> use bob >>= \case
-    v | v /= 0 -> pure 0
-      | otherwise -> (+) . sum <$> mapM eval stmts <*> eval w
-  S -> peek <$> use alice >>= \case
-    v | v == 0 -> pure 0
-      | otherwise -> (+) . sum <$> mapM eval stmts <*> eval w
-eval (Ignore stmts) = 0 <$ mapM eval stmts
+run stack inputs prog = output $ execState (mapM eval prog) init where
+  init | stack = E inputs (Queue [] []) S
+       | otherwise = E [] (Queue inputs []) Q
 
-run inputs prog = execState (runAB $ mapM eval prog) (E inputs (Queue [] []) S)
+  output env
+    | env ^. active == S = env ^. alice
+    | (Queue i o) <- env ^. bob = o ++ reverse i
 
-output env
-  | env ^. active == S = env ^. alice
-  | (Queue i o) <- env ^. bob = o ++ reverse i
+  eval One = pure 1
+  eval Len = use active >>= \case
+    Q -> size <$> use bob
+    S -> size <$> use alice
+  eval Pop = use active >>= \case
+    Q -> do
+      q <- use bob
+      let (a,q') = pop q
+      bob .= q'
+      pure a
+    S -> do
+      s <- use alice
+      let (a,s') = pop s
+      alice .= s'
+      pure a
+  eval Swp = 0 <$ (active %= next)
+  eval (Push stmts) = do
+    v <- sum <$> mapM eval stmts
+    use active >>= \case
+      Q -> bob %= push v
+      S -> alice %= push v
+    pure v
+  eval (Negate stmts) = negate . sum <$> mapM eval stmts
+  eval w@(While stmts) = use active >>= \case
+    Q -> peek <$> use bob >>= \case
+      v | v /= 0 -> pure 0
+        | otherwise -> (+) . sum <$> mapM eval stmts <*> eval w
+    S -> peek <$> use alice >>= \case
+      v | v == 0 -> pure 0
+        | otherwise -> (+) . sum <$> mapM eval stmts <*> eval w
+  eval (Ignore stmts) = 0 <$ mapM eval stmts
 
-ascii = putStr . map (chr . (`mod` 128) . fromIntegral)
 
-data Flags = F Bool ([Integer] -> IO ())
+data Flags = F Bool Bool ([Integer] -> IO ())
 
-defaults = F False (putStrLn . unwords . map show)
+defaults = F False True (putStrLn . unwords . map show)
 
-main :: IO ()
+options =
+  [ Option "e" ["expression"] (NoArg $ \(F _ s p)-> F True s p) "evaluate expression"
+  , Option "a" ["ascii"] (NoArg $ \(F e s _)-> F e s ascii) "ascii mode"
+  , Option "b" ["bob"] (NoArg $ \(F e _ p)-> F e False p) "start with Bob's stack"
+  ] where ascii = putStr . map (chr . (`mod` 128) . fromIntegral)
+
+
 main = getOpt Permute options <$> getArgs >>= \case
-  (args,a:as,[]) -> let (F e p) = foldr ($) defaults args in
-                      go p as =<< if e then pure a else readFile a
+  (args,a:as,[]) -> let (F e s p) = foldr ($) defaults args in
+                      go s p as =<< if e then pure a else readFile a
   (_,[],_)       -> die "missing file/expression"
   (_,_,err)      -> die $ concat err
 
-  where usage = " usage: alice-bob (-e expr | file) [-a] INPUTS"
+  where usage = " usage: alice-bob (-e expr | file) [-a] [-b] INPUTS"
 
-        go prnt as src = either (ioError . userError . show) (prnt . output) $
-          run <$> mapM parseInput as <*> parseProg src
+        go s prnt as src = either (ioError . userError . show) prnt $
+          run s <$> mapM parseInput as <*> parseProg src
 
         die m = ioError . userError $ m ++ "\n" ++ usageInfo usage options
-
-options =
-  [ Option "e" ["expression"] (NoArg $ \(F _ p)-> F True p) "evaluate expression"
-  , Option "a" ["ascii"] (NoArg $ \(F e _)-> F e ascii) "ascii mode"
-  ]
