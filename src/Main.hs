@@ -4,7 +4,6 @@ module Main where
 
 import Control.Monad.State.Strict
 import Data.Char
-import Data.List
 import Lens.Micro
 import Lens.Micro.Mtl
 import Lens.Micro.TH
@@ -18,7 +17,7 @@ type Prog = [Stmt]
 data Stmt = One       | Len         | Pop        | Swp          -- Nilads
           | Push Prog | Negate Prog | While Prog | Ignore Prog  -- Monads
 
-parseProg = parse (progP <* eof) "src" . dropWhileEnd (`notElem` brackets) where
+parseProg = parse (progP <* eof) "src" . filter (`elem` brackets) where
 
     progP = many $ choice [paren cs n m | (cs,n,m) <- funcs]
 
